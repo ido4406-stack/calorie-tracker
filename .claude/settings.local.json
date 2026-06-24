@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/idoshyahe/**)",
+      "Bash(npx create-expo-app@latest calorie-tracker --template blank)",
+      "Bash(git push *)"
+    ]
+  }
+}

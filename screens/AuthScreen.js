@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colors } from '../theme';
 
 export default function AuthScreen({ onLogin }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -31,14 +32,16 @@ export default function AuthScreen({ onLogin }) {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.glow} />
       <View style={styles.card}>
-        <Text style={styles.logo}>🥗</Text>
-        <Text style={styles.title}>מעקב קלוריות</Text>
+        <Text style={styles.logo}>⚡</Text>
+        <Text style={styles.title}>CalTrack</Text>
         <Text style={styles.subtitle}>{mode === 'login' ? 'התחברות' : 'הרשמה'}</Text>
 
         <TextInput
           style={styles.input}
           placeholder="שם משתמש"
+          placeholderTextColor={colors.subtext}
           value={username}
           onChangeText={setUsername}
           textAlign="right"
@@ -47,6 +50,7 @@ export default function AuthScreen({ onLogin }) {
         <TextInput
           style={styles.input}
           placeholder="סיסמה"
+          placeholderTextColor={colors.subtext}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -68,13 +72,43 @@ export default function AuthScreen({ onLogin }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0fdf4', justifyContent: 'center', padding: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 20, padding: 28, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },
-  logo: { fontSize: 50, textAlign: 'center', marginBottom: 8 },
-  title: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', color: '#1a1a1a' },
-  subtitle: { fontSize: 16, textAlign: 'center', color: '#888', marginBottom: 24 },
-  input: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 12 },
-  button: { backgroundColor: '#4CAF50', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
-  switchText: { textAlign: 'center', color: '#4CAF50', marginTop: 16, fontSize: 14 },
+  container: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', padding: 24 },
+  glow: {
+    position: 'absolute', top: -100, alignSelf: 'center',
+    width: 300, height: 300, borderRadius: 150,
+    backgroundColor: colors.tealGlow,
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    padding: 28,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  logo: { fontSize: 44, textAlign: 'center', marginBottom: 8 },
+  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', color: colors.teal, letterSpacing: 2 },
+  subtitle: { fontSize: 15, textAlign: 'center', color: colors.subtext, marginBottom: 28, marginTop: 4 },
+  input: {
+    backgroundColor: colors.input,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 12,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  button: {
+    backgroundColor: colors.teal,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: colors.teal,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  buttonText: { color: colors.bg, fontSize: 17, fontWeight: 'bold' },
+  switchText: { textAlign: 'center', color: colors.tealDim, marginTop: 18, fontSize: 14 },
 });
