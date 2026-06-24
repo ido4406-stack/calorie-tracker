@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Modal, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getMealsByDay, saveMealsByDay } from '../data/storage';
 import { FOOD_DB, CATEGORIES } from '../data/foods';
 import { colors } from '../theme';
@@ -97,11 +98,24 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const [manualFixedCal, setManualFixedCal] = useState('');
   const [manualFixedProtein, setManualFixedProtein] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  const [favorites, setFavorites] = useState(new Set());
 
   const dailyGoal = user.dailyGoal || 2000;
   const proteinGoal = Math.round((dailyGoal * 0.3) / 4);
 
-  useEffect(() => { getMealsByDay().then(setMealsByDay); }, []);
+  useEffect(() => {
+    getMealsByDay().then(setMealsByDay);
+    AsyncStorage.getItem('favorites').then(data => {
+      if (data) setFavorites(new Set(JSON.parse(data)));
+    });
+  }, []);
+
+  async function toggleFavorite(name) {
+    const updated = new Set(favorites);
+    if (updated.has(name)) updated.delete(name); else updated.add(name);
+    setFavorites(updated);
+    await AsyncStorage.setItem('favorites', JSON.stringify([...updated]));
+  }
 
   async function updateMeals(updated) {
     setMealsByDay(updated);
@@ -161,7 +175,9 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
     }
   }
 
-  const filteredFoods = FOOD_DB.filter(f => f.name.includes(search) && (!selectedCategory || f.category === selectedCategory));
+  const filteredFoods = selectedCategory === '__favorites__'
+    ? FOOD_DB.filter(f => favorites.has(f.name) && f.name.includes(search))
+    : FOOD_DB.filter(f => f.name.includes(search) && (!selectedCategory || f.category === selectedCategory));
 
   function getDayColor(dateKey) {
     const meals = mealsByDay[dateKey];
@@ -289,9 +305,9 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
           {/* פילטר קטגוריות — רק במצב מקומי */}
           {searchMode === 'local' && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesRow}>
-              {[null, ...CATEGORIES].map(cat => (
-                <TouchableOpacity key={cat || 'all'} style={[styles.chip, selectedCategory === cat && styles.chipActive]} onPress={() => setSelectedCategory(cat)}>
-                  <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>{cat || 'הכל'}</Text>
+              {[null, '__favorites__', ...CATEGORIES].map(cat => (
+                <TouchableOpacity key={cat || 'all'} style={[styles.chip, selectedCategory === cat && styles.chipActive, cat === '__favorites__' && styles.chipFav, cat === '__favorites__' && selectedCategory === cat && styles.chipFavActive]} onPress={() => setSelectedCategory(cat)}>
+                  <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>{cat === '__favorites__' ? `⭐ מועדפים (${favorites.size})` : cat || 'הכל'}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -335,18 +351,29 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
             </View>
           ) : (
             <View style={styles.foodList}>
+              {filteredFoods.length === 0 && selectedCategory === '__favorites__' && (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyText}>אין מועדפים עדיין</Text>
+                  <Text style={styles.emptySubtext}>לחץ על ❤️ ליד מאכל כדי להוסיף למועדפים</Text>
+                </View>
+              )}
               {filteredFoods.map(food => (
-                <TouchableOpacity key={food.name} style={styles.foodRow} onPress={() => { setGramModal(food); setGrams('100'); }}>
-                  <View style={styles.foodMacros}>
-                    <Text style={styles.foodCal}>{food.calories}</Text>
-                    <Text style={styles.foodCalUnit}>קל'</Text>
-                    <Text style={styles.foodProteinText}>{food.protein}g</Text>
-                  </View>
-                  <View style={styles.foodInfo}>
-                    <Text style={styles.foodName}>{food.name}</Text>
-                    <Text style={styles.foodPer}>לכל 100g</Text>
-                  </View>
-                </TouchableOpacity>
+                <View key={food.name} style={styles.foodRow}>
+                  <TouchableOpacity onPress={() => toggleFavorite(food.name)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Text style={styles.heartIcon}>{favorites.has(food.name) ? '❤️' : '🤍'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.foodRowInner} onPress={() => { setGramModal(food); setGrams('100'); }}>
+                    <View style={styles.foodMacros}>
+                      <Text style={styles.foodCal}>{food.calories}</Text>
+                      <Text style={styles.foodCalUnit}>קל'</Text>
+                      <Text style={styles.foodProteinText}>{food.protein}g</Text>
+                    </View>
+                    <View style={styles.foodInfo}>
+                      <Text style={styles.foodName}>{food.name}</Text>
+                      <Text style={styles.foodPer}>לכל 100g</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               ))}
             </View>
           )}
@@ -540,7 +567,11 @@ const styles = StyleSheet.create({
   emptySubtext: { color: colors.subtext, fontSize: 13, textAlign: 'center', lineHeight: 20 },
   foodBrand: { fontSize: 11, color: colors.subtext, marginTop: 1 },
   foodList: { paddingHorizontal: 14, paddingBottom: 30, gap: 8 },
-  foodRow: { backgroundColor: colors.card, borderRadius: 12, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
+  foodRow: { backgroundColor: colors.card, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: colors.cardBorder },
+  foodRowInner: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heartIcon: { fontSize: 18 },
+  chipFav: { borderColor: '#f4a', backgroundColor: 'rgba(255,170,170,0.08)' },
+  chipFavActive: { borderColor: '#f88', backgroundColor: 'rgba(255,136,136,0.18)' },
   foodInfo: { alignItems: 'flex-end' },
   foodName: { fontSize: 15, color: colors.text, fontWeight: '500' },
   foodPer: { fontSize: 11, color: colors.subtext, marginTop: 2 },
