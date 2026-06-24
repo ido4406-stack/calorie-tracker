@@ -6,6 +6,7 @@ import { getMealsByDay, saveMealsByDay } from '../data/storage';
 import { FOOD_DB, CATEGORIES } from '../data/foods';
 import { colors } from '../theme';
 import FoodScanModal from './FoodScanModal';
+import BarcodeScanModal from './BarcodeScanModal';
 
 async function searchOpenFoodFacts(query) {
   const controller = new AbortController();
@@ -98,6 +99,7 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const [manualFixedCal, setManualFixedCal] = useState('');
   const [manualFixedProtein, setManualFixedProtein] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [favorites, setFavorites] = useState(new Set());
 
   const dailyGoal = user.dailyGoal || 2000;
@@ -265,7 +267,10 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
             <Text style={styles.sectionTitle}>הוסף מאכל</Text>
             <View style={styles.addBtns}>
               <TouchableOpacity style={styles.scanBtn} onPress={() => setScanOpen(true)}>
-                <Text style={styles.scanBtnText}>📷 סרוק</Text>
+                <Text style={styles.scanBtnText}>📷 AI</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.barcodeBtn} onPress={() => setBarcodeOpen(true)}>
+                <Text style={styles.barcodeBtnText}>🔍 ברקוד</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.manualBtn} onPress={() => setManualModal(true)}>
                 <Text style={styles.manualBtnText}>+ ידני</Text>
@@ -444,6 +449,11 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
         onClose={() => setScanOpen(false)}
         onAddFoods={foods => { foods.forEach(f => addMealEntry(f)); setScanOpen(false); }}
       />
+      <BarcodeScanModal
+        visible={barcodeOpen}
+        onClose={() => setBarcodeOpen(false)}
+        onAddFood={food => { addMealEntry(food); setBarcodeOpen(false); }}
+      />
 
       <Modal visible={!!gramModal} transparent animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
@@ -539,6 +549,8 @@ const styles = StyleSheet.create({
   addBtns: { flexDirection: 'row', gap: 8 },
   scanBtn: { backgroundColor: 'rgba(255,140,66,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: colors.orange },
   scanBtnText: { color: colors.orange, fontWeight: 'bold', fontSize: 13 },
+  barcodeBtn: { backgroundColor: 'rgba(160,120,255,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: '#a078ff' },
+  barcodeBtnText: { color: '#a078ff', fontWeight: 'bold', fontSize: 13 },
   manualBtn: { backgroundColor: colors.tealGlow, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: colors.teal },
   manualBtnText: { color: colors.teal, fontWeight: 'bold', fontSize: 13 },
   mealRow: { backgroundColor: colors.card, marginHorizontal: 14, marginBottom: 6, padding: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.cardBorder },

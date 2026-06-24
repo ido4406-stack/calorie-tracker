@@ -10,7 +10,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true },
-        "NSCameraUsageDescription": "כדי לצלם אוכל ולנתח קלוריות עם AI"
+        "NSCameraUsageDescription": "כדי לצלם אוכל, לנתח קלוריות עם AI ולסרוק ברקודים"
       }
     },
     "android": {
