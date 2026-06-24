@@ -1,9 +1,34 @@
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Modal, Alert } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Modal, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { getMealsByDay, saveMealsByDay } from '../data/storage';
 import { FOOD_DB, CATEGORIES } from '../data/foods';
 import { colors } from '../theme';
+import FoodScanModal from './FoodScanModal';
+
+async function searchOpenFoodFacts(query) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&fields=product_name,nutriments,brands&page_size=25&json=true`;
+    const res = await fetch(url, { signal: controller.signal });
+    const data = await res.json();
+    return (data.products || [])
+      .filter(p => p.product_name && p.nutriments?.['energy-kcal_100g'])
+      .map(p => ({
+        name: p.product_name,
+        brand: p.brands || '',
+        calories: Math.round(p.nutriments['energy-kcal_100g']),
+        protein: Math.round((p.nutriments['proteins_100g'] || 0) * 10) / 10,
+        carbs: Math.round((p.nutriments['carbohydrates_100g'] || 0) * 10) / 10,
+        fat: Math.round((p.nutriments['fat_100g'] || 0) * 10) / 10,
+        category: 'חיפוש אונליין',
+        online: true,
+      }));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 const DAYS_HE = ['א','ב','ג','ד','ה','ו','ש'];
 const MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -57,6 +82,10 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const [tab, setTab] = useState('today');
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [searchMode, setSearchMode] = useState('local'); // 'local' | 'online'
+  const [onlineResults, setOnlineResults] = useState([]);
+  const [onlineLoading, setOnlineLoading] = useState(false);
+  const [onlineSearched, setOnlineSearched] = useState(false);
   const [gramModal, setGramModal] = useState(null);
   const [grams, setGrams] = useState('100');
   const [manualModal, setManualModal] = useState(false);
@@ -67,6 +96,7 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const [manualGrams, setManualGrams] = useState('100');
   const [manualFixedCal, setManualFixedCal] = useState('');
   const [manualFixedProtein, setManualFixedProtein] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
 
   const dailyGoal = user.dailyGoal || 2000;
   const proteinGoal = Math.round((dailyGoal * 0.3) / 4);
@@ -115,6 +145,22 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const remaining = dailyGoal - totalCalories;
   const proteinProgress = Math.min(totalProtein / proteinGoal, 1);
 
+  async function runOnlineSearch() {
+    if (!search.trim()) return Alert.alert('חיפוש', 'נא להכניס שם מאכל לחיפוש');
+    setOnlineLoading(true);
+    setOnlineSearched(false);
+    try {
+      const results = await searchOpenFoodFacts(search);
+      setOnlineResults(results);
+      setOnlineSearched(true);
+    } catch (e) {
+      const msg = e.name === 'AbortError' ? 'פג תוקף הבקשה — בדוק חיבור אינטרנט' : `שגיאה: ${e.message}`;
+      Alert.alert('שגיאת חיבור', msg);
+    } finally {
+      setOnlineLoading(false);
+    }
+  }
+
   const filteredFoods = FOOD_DB.filter(f => f.name.includes(search) && (!selectedCategory || f.category === selectedCategory));
 
   function getDayColor(dateKey) {
@@ -144,7 +190,7 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
   const maxCal = Math.max(...weekData.map(d => d.cal), dailyGoal);
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onLogout}><Text style={styles.logout}>יציאה</Text></TouchableOpacity>
         <Text style={styles.headerTitle}>שלום, {user.username} ⚡</Text>
@@ -160,7 +206,7 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
       </View>
 
       {tab === 'today' && (
-        <ScrollView>
+        <ScrollView keyboardShouldPersistTaps="handled">
           <View style={styles.ringCard}>
             <Text style={styles.dateText}>
               {new Date(selectedDate + 'T12:00:00').toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -201,36 +247,109 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
 
           <View style={styles.addRow}>
             <Text style={styles.sectionTitle}>הוסף מאכל</Text>
-            <TouchableOpacity style={styles.manualBtn} onPress={() => setManualModal(true)}>
-              <Text style={styles.manualBtnText}>+ ידני</Text>
-            </TouchableOpacity>
+            <View style={styles.addBtns}>
+              <TouchableOpacity style={styles.scanBtn} onPress={() => setScanOpen(true)}>
+                <Text style={styles.scanBtnText}>📷 סרוק</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.manualBtn} onPress={() => setManualModal(true)}>
+                <Text style={styles.manualBtnText}>+ ידני</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <TextInput style={styles.searchInput} placeholder="חפש מאכל..." placeholderTextColor={colors.subtext} value={search} onChangeText={setSearch} textAlign="right" />
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesRow}>
-            {[null, ...CATEGORIES].map(cat => (
-              <TouchableOpacity key={cat || 'all'} style={[styles.chip, selectedCategory === cat && styles.chipActive]} onPress={() => setSelectedCategory(cat)}>
-                <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>{cat || 'הכל'}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <View style={styles.foodList}>
-            {filteredFoods.map(food => (
-              <TouchableOpacity key={food.name} style={styles.foodRow} onPress={() => { setGramModal(food); setGrams('100'); }}>
-                <View style={styles.foodMacros}>
-                  <Text style={styles.foodCal}>{food.calories}</Text>
-                  <Text style={styles.foodCalUnit}>קל'</Text>
-                  <Text style={styles.foodProteinText}>{food.protein}g</Text>
-                </View>
-                <View style={styles.foodInfo}>
-                  <Text style={styles.foodName}>{food.name}</Text>
-                  <Text style={styles.foodPer}>לכל 100g</Text>
-                </View>
+          {/* טוגל חיפוש מקומי/אונליין */}
+          <View style={styles.searchModeRow}>
+            {[['local','📦 מקומי'],['online','🌐 אונליין']].map(([mode, label]) => (
+              <TouchableOpacity key={mode} style={[styles.modeChip, searchMode === mode && styles.modeChipActive]}
+                onPress={() => { setSearchMode(mode); setOnlineResults([]); setOnlineSearched(false); }}>
+                <Text style={[styles.modeChipText, searchMode === mode && styles.modeChipTextActive]}>{label}</Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* שדה חיפוש */}
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder={searchMode === 'local' ? 'חפש במאגר המקומי...' : 'חפש מוצר באינטרנט...'}
+              placeholderTextColor={colors.subtext}
+              value={search}
+              onChangeText={t => { setSearch(t); if (searchMode === 'online') { setOnlineResults([]); setOnlineSearched(false); }}}
+              textAlign="right"
+              returnKeyType={searchMode === 'online' ? 'search' : 'default'}
+              onSubmitEditing={searchMode === 'online' ? runOnlineSearch : undefined}
+            />
+            {searchMode === 'online' && (
+              <TouchableOpacity style={styles.searchBtn} onPress={runOnlineSearch}>
+                <Text style={styles.searchBtnText}>חפש</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* פילטר קטגוריות — רק במצב מקומי */}
+          {searchMode === 'local' && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesRow}>
+              {[null, ...CATEGORIES].map(cat => (
+                <TouchableOpacity key={cat || 'all'} style={[styles.chip, selectedCategory === cat && styles.chipActive]} onPress={() => setSelectedCategory(cat)}>
+                  <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>{cat || 'הכל'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* תוצאות */}
+          {searchMode === 'online' ? (
+            <View style={styles.foodList}>
+              {onlineLoading && (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator color={colors.teal} size="large" />
+                  <Text style={styles.loadingText}>מחפש...</Text>
+                </View>
+              )}
+              {!onlineLoading && onlineSearched && onlineResults.length === 0 && (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyText}>לא נמצאו תוצאות</Text>
+                  <Text style={styles.emptySubtext}>נסה לחפש באנגלית או שנה את המילות החיפוש</Text>
+                </View>
+              )}
+              {!onlineLoading && onlineResults.map((food, i) => (
+                <TouchableOpacity key={i} style={styles.foodRow} onPress={() => { setGramModal(food); setGrams('100'); }}>
+                  <View style={styles.foodMacros}>
+                    <Text style={styles.foodCal}>{food.calories}</Text>
+                    <Text style={styles.foodCalUnit}>קל'</Text>
+                    <Text style={styles.foodProteinText}>{food.protein}g</Text>
+                  </View>
+                  <View style={styles.foodInfo}>
+                    <Text style={styles.foodName}>{food.name}</Text>
+                    {food.brand ? <Text style={styles.foodBrand}>{food.brand}</Text> : null}
+                    <Text style={styles.foodPer}>לכל 100g</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {!onlineLoading && !onlineSearched && (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyText}>🌐 חיפוש בOpen Food Facts</Text>
+                  <Text style={styles.emptySubtext}>מיליוני מוצרים מכל העולם כולל ישראל{'\n'}כתוב שם מוצר ולחץ חפש</Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.foodList}>
+              {filteredFoods.map(food => (
+                <TouchableOpacity key={food.name} style={styles.foodRow} onPress={() => { setGramModal(food); setGrams('100'); }}>
+                  <View style={styles.foodMacros}>
+                    <Text style={styles.foodCal}>{food.calories}</Text>
+                    <Text style={styles.foodCalUnit}>קל'</Text>
+                    <Text style={styles.foodProteinText}>{food.protein}g</Text>
+                  </View>
+                  <View style={styles.foodInfo}>
+                    <Text style={styles.foodName}>{food.name}</Text>
+                    <Text style={styles.foodPer}>לכל 100g</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </ScrollView>
       )}
 
@@ -293,8 +412,15 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
         </ScrollView>
       )}
 
+      <FoodScanModal
+        visible={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onAddFoods={foods => { foods.forEach(f => addMealEntry(f)); setScanOpen(false); }}
+      />
+
       <Modal visible={!!gramModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
+          <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{gramModal?.name}</Text>
             <Text style={styles.modalSub}>לכל 100g: {gramModal?.calories} קל'  •  {gramModal?.protein}g חלבון</Text>
@@ -311,12 +437,14 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
               <TouchableOpacity style={styles.confirmBtn} onPress={confirmGrams}><Text style={styles.confirmText}>הוסף</Text></TouchableOpacity>
             </View>
           </View>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={manualModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <ScrollView>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
+          <View style={styles.modalOverlay}>
+          <ScrollView keyboardShouldPersistTaps="handled">
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>הוסף מאכל ידנית</Text>
               <View style={styles.modeToggle}>
@@ -351,13 +479,15 @@ export default function HomeScreen({ user, onLogout, onEditProfile }) {
             </View>
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  kav: { flex: 1 },
   header: { backgroundColor: colors.card, paddingTop: 55, paddingBottom: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
   headerTitle: { color: colors.text, fontSize: 17, fontWeight: 'bold' },
   logout: { color: colors.subtext, fontSize: 14 },
@@ -379,6 +509,9 @@ const styles = StyleSheet.create({
   proteinFill: { height: '100%', backgroundColor: '#4FC3F7', borderRadius: 3 },
   sectionTitle: { fontSize: 14, fontWeight: 'bold', color: colors.subtext, marginHorizontal: 14, marginTop: 10, marginBottom: 6, textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 },
   addRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 14 },
+  addBtns: { flexDirection: 'row', gap: 8 },
+  scanBtn: { backgroundColor: 'rgba(255,140,66,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: colors.orange },
+  scanBtnText: { color: colors.orange, fontWeight: 'bold', fontSize: 13 },
   manualBtn: { backgroundColor: colors.tealGlow, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: colors.teal },
   manualBtnText: { color: colors.teal, fontWeight: 'bold', fontSize: 13 },
   mealRow: { backgroundColor: colors.card, marginHorizontal: 14, marginBottom: 6, padding: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.cardBorder },
@@ -392,6 +525,20 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.tealGlow, borderColor: colors.teal },
   chipText: { color: colors.subtext, fontSize: 13 },
   chipTextActive: { color: colors.teal },
+  searchModeRow: { flexDirection: 'row', marginHorizontal: 14, marginBottom: 10, backgroundColor: colors.card, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: colors.cardBorder },
+  modeChip: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
+  modeChipActive: { backgroundColor: colors.tealGlow, borderWidth: 1, borderColor: colors.teal },
+  modeChipText: { color: colors.subtext, fontSize: 14 },
+  modeChipTextActive: { color: colors.teal, fontWeight: 'bold' },
+  searchRow: { flexDirection: 'row', marginHorizontal: 14, marginBottom: 8, gap: 8 },
+  searchBtn: { backgroundColor: colors.teal, borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center', shadowColor: colors.teal, shadowOpacity: 0.3, shadowRadius: 6, elevation: 3 },
+  searchBtnText: { color: colors.bg, fontWeight: 'bold', fontSize: 14 },
+  loadingBox: { alignItems: 'center', padding: 40, gap: 12 },
+  loadingText: { color: colors.subtext, fontSize: 14 },
+  emptyBox: { alignItems: 'center', padding: 30, gap: 8 },
+  emptyText: { color: colors.text, fontSize: 16, fontWeight: 'bold' },
+  emptySubtext: { color: colors.subtext, fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  foodBrand: { fontSize: 11, color: colors.subtext, marginTop: 1 },
   foodList: { paddingHorizontal: 14, paddingBottom: 30, gap: 8 },
   foodRow: { backgroundColor: colors.card, borderRadius: 12, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
   foodInfo: { alignItems: 'flex-end' },

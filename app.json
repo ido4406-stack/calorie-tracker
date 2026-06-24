@@ -7,9 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true },
+        "NSCameraUsageDescription": "כדי לצלם אוכל ולנתח קלוריות עם AI"
+      }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
